@@ -4,6 +4,9 @@ import requests
 from bs4 import BeautifulSoup
 from typing import Optional
 from rich.console import Console
+from seleniumbase import Driver
+
+driver = Driver(undetected=True, headless=True, browser="chrome")
 
 
 def get_config(console: Console) -> Optional[dict]:
@@ -11,11 +14,15 @@ def get_config(console: Console) -> Optional[dict]:
 
     config_path = os.path.expanduser("~") + slash + "codeforces.uwu"
     if not config_path:
-        console.print("[bold red]ERROR: [/]Config file not found.\nPlease run `cf config`\n")
+        console.print(
+            "[bold red]ERROR: [/]Config file not found.\nPlease run `cf config`\n"
+        )
         return
 
     if not os.path.isfile(config_path):
-        console.print("[bold red]ERROR: [/]Config file not found.\nPlease run `cf config`\n")
+        console.print(
+            "[bold red]ERROR: [/]Config file not found.\nPlease run `cf config`\n"
+        )
         return
 
     data = None
@@ -44,29 +51,29 @@ class CFClient:
         self.password = password
         self.session = requests.Session()
         self.console = Console()
+        self.driver = Driver(
+            undetected=True, headless=True, browser="chrome", headed=False
+        )
 
     def login(self) -> bool:
         self.console.log("Logging in...")
-        csrf_token = self.get_csrf("https://codeforces.com/enter")
+        self.driver.open("https://codeforces.com/enter")
+        self.driver.wait_for_element_visible("#handleOrEmail")
+        self.driver.send_keys("#handleOrEmail", self.username)
+        self.driver.send_keys("#password", self.password)
+        self.driver.click('input[type="submit"][value="Login"]')
+        self.driver.sleep(5)
+        self.driver.open("https://codeforces.com/")
 
-        r2 = self.session.post("https://codeforces.com/enter", data={
-            "csrf_token": csrf_token,
-            "action": "enter",
-            "handleOrEmail": self.username,
-            "password": self.password
-        }, headers={
-            "X-Csrf-Token": csrf_token
-        }, allow_redirects=True)
-        s2 = BeautifulSoup(r2.text, "html.parser")
+        # Use the driver's page_source directly instead of writing to a file
+        soup = BeautifulSoup(self.driver.page_source, "html.parser")
 
-        usr = s2.find_all("div", {"class": "lang-chooser"})[0].find_all('a')
-        if usr[-1].string.strip() == "Register":
+        # Look for the user profile link in the top-right corner
+        user_link = soup.find("a", href=f"/profile/{self.username}")
+
+        if user_link and self.username in user_link.text.strip():
+            self.console.log("Logged in successfully")
+            return True
+        else:
+            self.console.log("[bold red]ERROR: [/]Login failed.")
             return False
-
-        self.console.log("Logged in")
-        return True
-
-    def get_csrf(self, url) -> str:
-        r = self.session.get(url)
-        s = BeautifulSoup(r.text, "html.parser")
-        return s.find_all("span", {"class": "csrf-token"})[0]["data-csrf"]
